@@ -129,7 +129,8 @@ public class HomePage {
         card.getStyleClass().add("movie-display-card");
         card.setPrefWidth(300);
         card.setMaxWidth(320);
-        UIComponents.addHoverScale(card, 1.018);
+        // Keep home-page artwork completely stable. Hover only changes the
+        // card border/background through CSS; it never scales the poster.
         return card;
     }
 
