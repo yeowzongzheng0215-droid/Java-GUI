@@ -8,6 +8,7 @@ import CineStream.Page.HomePage;
 import CineStream.Page.LoginPage;
 import CineStream.Page.MoviePage;
 import CineStream.Page.SignUpPage;
+import javafx.animation.Interpolator;
 import javafx.animation.ScaleTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -170,16 +171,25 @@ public final class UIComponents {
         return button;
     }
 
-    public static void addHoverScale(Node node, double scale) {
-        node.setOnMouseEntered(e -> animateScale(node, scale));
-        node.setOnMouseExited(e -> animateScale(node, 1.0));
-    }
+    public static void addHoverScale(Node node, double requestedScale) {
+        // Keep the effect subtle. Even seats that previously requested a large
+        // scale are capped at 2.5%, so nearby content does not appear to jump.
+        double hoverScale = Math.max(1.0, Math.min(requestedScale, 1.025));
+        ScaleTransition[] activeTransition = new ScaleTransition[1];
 
-    private static void animateScale(Node node, double target) {
-        ScaleTransition transition = new ScaleTransition(Duration.millis(180), node);
-        transition.setToX(target);
-        transition.setToY(target);
-        transition.play();
+        node.hoverProperty().addListener((observable, wasHovered, isHovered) -> {
+            if (activeTransition[0] != null) {
+                activeTransition[0].stop();
+            }
+
+            ScaleTransition transition = new ScaleTransition(
+                    Duration.millis(isHovered ? 260 : 220), node);
+            transition.setToX(isHovered ? hoverScale : 1.0);
+            transition.setToY(isHovered ? hoverScale : 1.0);
+            transition.setInterpolator(Interpolator.EASE_BOTH);
+            activeTransition[0] = transition;
+            transition.play();
+        });
     }
 
     public static StackPane mediaFrame(String resourcePath, String fallbackTitle,
