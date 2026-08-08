@@ -197,6 +197,8 @@ public final class UIComponents {
         StackPane frame = new StackPane();
         frame.getStyleClass().add("media-frame");
         frame.setPrefSize(preferredWidth, preferredHeight);
+        frame.setMinWidth(0);
+        frame.setMaxWidth(preferredWidth);
         frame.setMinHeight(preferredHeight);
         frame.setMaxHeight(preferredHeight);
 
@@ -204,6 +206,11 @@ public final class UIComponents {
         if (resource != null) {
             ImageView imageView = new ImageView(new Image(resource.toExternalForm(), true));
             imageView.setPreserveRatio(false);
+            // The ImageView must not participate in its parent's size
+            // calculation. Otherwise fitWidth -> frame.width creates a layout
+            // feedback loop in which the frame (and therefore the image) keeps
+            // becoming wider on every JavaFX layout pass.
+            imageView.setManaged(false);
             imageView.fitWidthProperty().bind(frame.widthProperty());
             imageView.fitHeightProperty().bind(frame.heightProperty());
             frame.getChildren().add(imageView);
