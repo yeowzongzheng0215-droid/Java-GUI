@@ -2,173 +2,314 @@ package CineStream.Page;
 
 import CineStream.BookingUtils;
 import CineStream.MainApp;
+import CineStream.Model.ReceiptGenerator;
 import CineStream.Model.Seat;
 import CineStream.Model.SeatMap;
 import CineStream.Model.Showtime;
+import CineStream.UIComponents;
 import CineStream.UserSession;
-import CineStream.Model.ReceiptGenerator;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import java.util.HashSet;
-import java.util.Set;
+
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class SeatPage {
     private final MainApp app;
     private final BorderPane root;
-    // 改成 Set，避免重复
     private final Set<Seat> selectedSeats = new HashSet<>();
-    private static final double PRICE_PER_SEAT = ReceiptGenerator.PRICE_PER_SEAT;
-
-    private Label lblSeatCount;
-    private Label lblTotalPrice;
+    private final Label seatCount = new Label();
+    private final Label totalPrice = new Label();
+    private final FlowPane selectedSeatChips = new FlowPane(7, 7);
+    private final Button proceedButton = UIComponents.primaryButton("Review booking  →");
+    private final UserSession session = UserSession.getInstance();
+    private final Showtime showtime;
 
     public SeatPage(MainApp app) {
         this.app = app;
-        root = new BorderPane();
-        root.setPadding(new Insets(6)); // 外间距更小
+        this.showtime = session.getSelectedShowtime();
+        root = UIComponents.createPage(app, "movies");
 
-        UserSession session = UserSession.getInstance();
-        Showtime showtime = session.getSelectedShowtime();
-        SeatMap seatMap = showtime.getHall().getSeatMap();
-
-        // 标题与信息
-        Label title = new Label("🎟️ Select Your Seats");
-        title.getStyleClass().add("title-label");
-        title.setStyle("-fx-font-size: 14px;");
-
-        Label info = new Label(String.format(
-                "Movie: %s | Hall: %s | Time: %s",
-                showtime.getMovie().getTitle(),
-                showtime.getHall().getName(),
-                showtime.getTime().toString().substring(0, 16)
-        ));
-        info.getStyleClass().add("normal-text");
-        info.setStyle("-fx-font-size: 11px;");
-
-        // 价格显示区域
-        lblSeatCount = new Label("Selected Seats: 0");
-        lblSeatCount.setStyle("-fx-font-size: 11px;");
-
-        lblTotalPrice = new Label(String.format("Total Price: RM %.2f", 0.00));
-        lblTotalPrice.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #2c5aa0;");
-
-        HBox priceBox = new HBox(15, lblSeatCount, lblTotalPrice);
-        priceBox.setPadding(new Insets(3, 0, 6, 0));
-
-        // 座位网格
-        GridPane seatGrid = new GridPane();
-        seatGrid.setHgap(3);
-        seatGrid.setVgap(3);
-        seatGrid.setPadding(new Insets(4));
-        seatGrid.getStyleClass().add("panel");
-
-        Seat[][] seats = seatMap.getSeats();
-        int rows = seats.length;
-        int cols = rows > 0 ? seats[0].length : 0;
-
-        // 座位按钮更小
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                Seat seat = seats[r][c];
-                Button seatBtn = new Button(seat.getSeatNumber());
-                seatBtn.setPrefSize(24, 24);
-                seatBtn.setStyle("-fx-font-size: 9px;");
-                updateSeatStyle(seatBtn, seat.getStatus());
-
-                seatBtn.setOnAction(e -> {
-                    if (seat.getStatus() == Seat.Status.BOOKED) {
-                        new Alert(Alert.AlertType.INFORMATION, "This seat is already taken.").show();
-                        return;
-                    }
-                    if (selectedSeats.contains(seat)) {
-                        selectedSeats.remove(seat);
-                        seat.setStatus(Seat.Status.AVAILABLE);
-                    } else {
-                        selectedSeats.add(seat);
-                        seat.setStatus(Seat.Status.SELECTED);
-                    }
-                    updateSeatStyle(seatBtn, seat.getStatus());
-                    updatePriceDisplay();
-                });
-
-                seatGrid.add(seatBtn, c, r);
-            }
+        if (showtime == null) {
+            VBox missing = UIComponents.pageContent(
+                    UIComponents.pageIntro("Booking", "No showtime selected",
+                            "Please return to the movie page and choose a screening first."),
+                    backToMoviesButton()
+            );
+            root.setCenter(UIComponents.scrollable(missing));
+            return;
         }
 
-        // 图例
-        HBox legend = new HBox(8);
-        legend.setPadding(new Insets(3, 0, 6, 0));
-        legend.getChildren().addAll(
-                createLegend("Available", "seat-available"),
-                createLegend("Selected", "seat-selected"),
-                createLegend("Booked", "seat-booked")
+        restoreSelectedSeats();
+
+        VBox intro = UIComponents.pageIntro(
+                "Step 2 of 5",
+                "Choose your perfect seats",
+                "The screen is at the top. Select one or more available seats to update your total."
         );
 
-        // 底部按钮
-        Button btnNext = new Button("Proceed to Summary");
-        btnNext.getStyleClass().add("button-full");
-        btnNext.setStyle("-fx-font-size: 11px;");
-        btnNext.setOnAction(e -> {
-            if (selectedSeats.isEmpty()) {
-                new Alert(Alert.AlertType.WARNING, "Please select at least one seat first.").show();
-                return;
-            }
-            if (BookingUtils.bookSeats(showtime, new ArrayList<>(selectedSeats))) {
-                // 转换成 List 存入 session
-                session.setSelectedSeats(new ArrayList<>(selectedSeats));
-                app.navigateTo(new PricePage(app).getRoot());
-            } else {
-                new Alert(Alert.AlertType.ERROR, "Some seats have been taken, please re-select.").show();
-            }
-        });
+        HBox movieStrip = createMovieStrip();
+        VBox auditorium = createAuditorium();
+        VBox summary = createSummary();
 
-        Button btnBack = new Button("Back to Showtime");
-        btnBack.getStyleClass().add("button-full");
-        btnBack.setStyle("-fx-font-size: 11px;");
-        btnBack.setOnAction(e -> app.navigateTo(new MoviePage(app).getRoot()));
+        FlowPane bookingLayout = new FlowPane(22, 22, auditorium, summary);
+        bookingLayout.setAlignment(Pos.TOP_CENTER);
+        bookingLayout.getStyleClass().add("seat-booking-layout");
 
-        VBox vbox = new VBox(6, title, info, priceBox, seatGrid, legend, btnNext, btnBack);
-        vbox.getStyleClass().add("card");
-        vbox.setPadding(new Insets(10));
-        vbox.setMaxWidth(420);
-
-        root.setCenter(vbox);
-        BorderPane.setAlignment(vbox, javafx.geometry.Pos.CENTER);
+        VBox content = UIComponents.pageContent(
+                UIComponents.bookingSteps(1),
+                intro,
+                movieStrip,
+                bookingLayout
+        );
+        root.setCenter(UIComponents.scrollable(content));
+        updateSummary();
     }
 
-    private void updateSeatStyle(Button btn, Seat.Status status) {
-        btn.getStyleClass().removeAll("seat-available", "seat-selected", "seat-booked");
-        if (status == Seat.Status.AVAILABLE) {
-            btn.getStyleClass().add("seat-available");
-        } else if (status == Seat.Status.SELECTED) {
-            btn.getStyleClass().add("seat-selected");
-        } else if (status == Seat.Status.BOOKED) {
-            btn.getStyleClass().add("seat-booked");
+    private HBox createMovieStrip() {
+        Label format = new Label("IMAX EXPERIENCE");
+        format.getStyleClass().add("format-chip");
+        Label movie = new Label(showtime.getMovie().getTitle());
+        movie.getStyleClass().add("strip-movie-title");
+        Label details = new Label(showtime.getTime().format(DateTimeFormatter.ofPattern("EEEE, d MMM yyyy • h:mm a"))
+                + "   |   " + showtime.getHall().getName());
+        details.getStyleClass().add("muted-text");
+        VBox text = new VBox(5, format, movie, details);
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Button change = UIComponents.ghostButton("Change showtime");
+        change.setOnAction(e -> goBackToMovies());
+
+        HBox strip = new HBox(18, text, spacer, change);
+        strip.setAlignment(Pos.CENTER_LEFT);
+        strip.getStyleClass().add("movie-info-strip");
+        return strip;
+    }
+
+    private VBox createAuditorium() {
+        Label screenLabel = new Label("SCREEN");
+        screenLabel.getStyleClass().add("screen-label");
+        Region screen = new Region();
+        screen.getStyleClass().add("cinema-screen");
+        VBox screenGroup = new VBox(7, screenLabel, screen);
+        screenGroup.setAlignment(Pos.CENTER);
+
+        GridPane seatGrid = new GridPane();
+        seatGrid.setHgap(8);
+        seatGrid.setVgap(8);
+        seatGrid.setAlignment(Pos.CENTER);
+        seatGrid.getStyleClass().add("seat-grid");
+
+        SeatMap map = showtime.getHall().getSeatMap();
+        Seat[][] seats = map.getSeats();
+        int rows = seats.length;
+        int cols = rows == 0 ? 0 : seats[0].length;
+        int aisleAfter = cols / 2;
+
+        for (int row = 0; row < rows; row++) {
+            Label leftRow = rowLabel(row);
+            seatGrid.add(leftRow, 0, row);
+            for (int col = 0; col < cols; col++) {
+                Seat seat = seats[row][col];
+                Button button = new Button(seat.getSeatNumber());
+                button.getStyleClass().add("seat-button");
+                button.setPrefSize(48, 42);
+                button.setMinSize(42, 38);
+                updateSeatStyle(button, seat.getStatus());
+                button.setDisable(seat.getStatus() == Seat.Status.BOOKED);
+                button.setOnAction(e -> toggleSeat(seat, button));
+                UIComponents.addHoverScale(button, 1.10);
+
+                int gridColumn = col + 1 + (col >= aisleAfter ? 1 : 0);
+                seatGrid.add(button, gridColumn, row);
+            }
+            int rightColumn = cols + 2;
+            seatGrid.add(rowLabel(row), rightColumn, row);
+        }
+
+        Region aisle = new Region();
+        aisle.setMinWidth(18);
+        seatGrid.add(aisle, aisleAfter + 1, 0, 1, Math.max(rows, 1));
+
+        HBox legend = new HBox(20,
+                legend("Available", "legend-available"),
+                legend("Selected", "legend-selected"),
+                legend("Booked", "legend-booked")
+        );
+        legend.setAlignment(Pos.CENTER);
+
+        VBox card = new VBox(28, screenGroup, seatGrid, legend);
+        card.setAlignment(Pos.TOP_CENTER);
+        card.setPadding(new Insets(28));
+        card.setPrefWidth(720);
+        card.getStyleClass().addAll("glass-card", "auditorium-card");
+        return card;
+    }
+
+    private VBox createSummary() {
+        Label title = new Label("Your selection");
+        title.getStyleClass().add("section-heading-small");
+        Label hint = new Label("Selected seats");
+        hint.getStyleClass().add("detail-label");
+        selectedSeatChips.getStyleClass().add("selected-seat-list");
+
+        seatCount.getStyleClass().add("summary-line-value");
+        totalPrice.getStyleClass().add("summary-total");
+
+        HBox countRow = summaryRow("Tickets", seatCount);
+        HBox feeRow = summaryRow("Booking fee", valueLabel("RM 0.00"));
+        HBox totalRow = summaryRow("Total", totalPrice);
+        totalRow.getStyleClass().add("total-row");
+
+        proceedButton.setMaxWidth(Double.MAX_VALUE);
+        proceedButton.setOnAction(e -> proceed());
+        Button back = UIComponents.secondaryButton("Back to showtimes");
+        back.setMaxWidth(Double.MAX_VALUE);
+        back.setOnAction(e -> goBackToMovies());
+
+        Label note = new Label("Seats are confirmed only after successful payment.");
+        note.setWrapText(true);
+        note.getStyleClass().add("secure-note");
+
+        VBox summary = new VBox(16, title, hint, selectedSeatChips, countRow, feeRow, totalRow,
+                proceedButton, back, note);
+        summary.setPadding(new Insets(26));
+        summary.setPrefWidth(330);
+        summary.getStyleClass().addAll("glass-card", "seat-summary-card");
+        return summary;
+    }
+
+    private HBox summaryRow(String name, Label value) {
+        Label label = new Label(name);
+        label.getStyleClass().add("summary-line-label");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox row = new HBox(10, label, spacer, value);
+        row.setAlignment(Pos.CENTER_LEFT);
+        return row;
+    }
+
+    private Label valueLabel(String text) {
+        Label label = new Label(text);
+        label.getStyleClass().add("summary-line-value");
+        return label;
+    }
+
+    private Label rowLabel(int row) {
+        Label label = new Label(String.valueOf((char) ('A' + row)));
+        label.getStyleClass().add("row-label");
+        return label;
+    }
+
+    private HBox legend(String text, String styleClass) {
+        Region dot = new Region();
+        dot.getStyleClass().addAll("legend-dot", styleClass);
+        Label label = new Label(text);
+        label.getStyleClass().add("legend-text");
+        HBox item = new HBox(7, dot, label);
+        item.setAlignment(Pos.CENTER);
+        return item;
+    }
+
+    private void restoreSelectedSeats() {
+        for (Seat seat : session.getSelectedSeats()) {
+            if (seat.getStatus() == Seat.Status.SELECTED) {
+                selectedSeats.add(seat);
+            }
         }
     }
 
-    private void updatePriceDisplay() {
-        int count = selectedSeats.size();
-        double total = count * PRICE_PER_SEAT;
-        lblSeatCount.setText("Selected Seats: " + count);
-        lblTotalPrice.setText(String.format("Total Price: RM %.2f", total));
+    private void toggleSeat(Seat seat, Button button) {
+        if (seat.getStatus() == Seat.Status.BOOKED) {
+            UIComponents.showAlert(Alert.AlertType.INFORMATION, "Seat unavailable",
+                    "That seat has already been booked. Please choose another one.");
+            return;
+        }
+
+        if (selectedSeats.remove(seat)) {
+            seat.setStatus(Seat.Status.AVAILABLE);
+        } else {
+            selectedSeats.add(seat);
+            seat.setStatus(Seat.Status.SELECTED);
+        }
+        updateSeatStyle(button, seat.getStatus());
+        updateSummary();
     }
 
-    private HBox createLegend(String text, String style) {
-        Button sample = new Button();
-        sample.setPrefSize(12, 12);
-        sample.getStyleClass().add(style);
-        Label label = new Label(text);
-        label.setStyle("-fx-font-size: 10px;");
-        return new HBox(3, sample, label);
+    private void updateSeatStyle(Button button, Seat.Status status) {
+        button.getStyleClass().removeAll("seat-available", "seat-selected", "seat-booked");
+        switch (status) {
+            case AVAILABLE -> button.getStyleClass().add("seat-available");
+            case SELECTED -> button.getStyleClass().add("seat-selected");
+            case BOOKED -> button.getStyleClass().add("seat-booked");
+        }
+    }
+
+    private void updateSummary() {
+        int count = selectedSeats.size();
+        seatCount.setText(count + (count == 1 ? " seat" : " seats"));
+        totalPrice.setText(String.format("RM %.2f", count * ReceiptGenerator.PRICE_PER_SEAT));
+        proceedButton.setDisable(count == 0);
+
+        List<Seat> ordered = selectedSeats.stream()
+                .sorted(Comparator.comparingInt(Seat::getRow).thenComparingInt(Seat::getCol))
+                .toList();
+        session.setSelectedSeats(ordered);
+
+        selectedSeatChips.getChildren().clear();
+        if (count == 0) {
+            Label empty = new Label("No seats selected yet");
+            empty.getStyleClass().add("muted-text");
+            selectedSeatChips.getChildren().add(empty);
+            return;
+        }
+
+        ordered.forEach(seat -> {
+            Label chip = new Label(seat.getSeatNumber());
+            chip.getStyleClass().add("seat-chip");
+            selectedSeatChips.getChildren().add(chip);
+        });
+    }
+
+    private void proceed() {
+        if (selectedSeats.isEmpty()) {
+            UIComponents.showAlert(Alert.AlertType.WARNING, "Choose a seat",
+                    "Please select at least one available seat before continuing.");
+            return;
+        }
+        List<Seat> ordered = selectedSeats.stream()
+                .sorted(Comparator.comparingInt(Seat::getRow).thenComparingInt(Seat::getCol))
+                .toList();
+        session.setSelectedSeats(ordered);
+        app.navigateTo(new PricePage(app).getRoot());
+    }
+
+    private Button backToMoviesButton() {
+        Button button = UIComponents.primaryButton("Browse showtimes");
+        button.setOnAction(e -> app.navigateTo(new MoviePage(app).getRoot()));
+        return button;
+    }
+
+    private void goBackToMovies() {
+        BookingUtils.releaseSelection(new ArrayList<>(selectedSeats));
+        session.setSelectedSeats(List.of());
+        app.navigateTo(new MoviePage(app, session.getSelectedMovie()).getRoot());
     }
 
     public Pane getRoot() {

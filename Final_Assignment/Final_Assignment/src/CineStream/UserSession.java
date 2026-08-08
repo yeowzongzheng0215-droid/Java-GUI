@@ -30,7 +30,8 @@ public class UserSession {
     }
 
     public void logout() {
-        // ✅ 保留单例，只清空数据
+        // Release any seats that were selected but not yet paid for.
+        BookingUtils.releaseSelection(this.selectedSeats);
         this.username = null;
         this.selectedMovie = null;
         this.selectedShowtime = null;
